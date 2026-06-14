@@ -141,6 +141,7 @@ async function askUserToCategorise(
     telegram_chat_id: chatId,
   });
 
+  
   await sendTelegramMessage(
     chatId,
     `Please categorise this expense:\n\nDescription: ${description}\nAmount: $${amount.toFixed(
