@@ -203,11 +203,28 @@ Deno.serve(async (req) => {
       return new Response("OK", { status: 200 });
     }
 
-    const handledPendingExpense = await handlePendingExpenseReply(chatId, text);
+   const { data: existingPendingExpense } = await supabase
+  .from("pending_expenses")
+  .select("*")
+  .eq("telegram_chat_id", chatId)
+  .order("created_at", { ascending: false })
+  .limit(1)
+  .maybeSingle();
 
-    if (handledPendingExpense) {
-      return new Response("OK", { status: 200 });
-    }
+if (existingPendingExpense) {
+  const handledPendingExpense = await handlePendingExpenseReply(chatId, text);
+
+  if (handledPendingExpense) {
+    return new Response("OK", { status: 200 });
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    `Please reply with one of these categories:\n\n${CATEGORIES.join(", ")}`
+  );
+
+  return new Response("OK", { status: 200 });
+}
 
     const amount = extractAmount(text);
     const description = extractDescription(text);
