@@ -48,3 +48,12 @@ insert into category_rules (keyword, category) values
 ('syfe', 'Investment'),
 ('endowus', 'Investment')
 on conflict do nothing;
+
+create table if not exists pending_expenses (
+  id uuid primary key default gen_random_uuid(),
+  description text not null,
+  amount numeric(10,2) not null,
+  raw_message text,
+  telegram_chat_id text not null,
+  created_at timestamptz default now()
+);
