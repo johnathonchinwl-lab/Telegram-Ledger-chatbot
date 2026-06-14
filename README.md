@@ -10,10 +10,7 @@ grab 12.40
 shopee 51.70
 zus coffee 5.90
 
-
 ```md
 ## Commands
-
-```text
 /start
 /summary
