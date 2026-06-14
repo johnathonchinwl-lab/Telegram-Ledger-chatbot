@@ -149,7 +149,43 @@ async function askUserToCategorise(
     )}\n\nReply with one category:\n${CATEGORIES.join(", ")}`
   );
 }
+async function handleDeleteLastCommand(chatId: string, text: string): Promise<boolean> {
+  if (text !== "/delete_last") {
+    return false;
+  }
 
+  const { data: lastExpense, error: findError } = await supabase
+    .from("expenses")
+    .select("*")
+    .eq("telegram_chat_id", chatId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (findError || !lastExpense) {
+    await sendTelegramMessage(chatId, "No expense found to delete.");
+    return true;
+  }
+
+  const { error: deleteError } = await supabase
+    .from("expenses")
+    .delete()
+    .eq("id", lastExpense.id);
+
+  if (deleteError) {
+    await sendTelegramMessage(chatId, "Sorry, I could not delete the last expense.");
+    return true;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    `Deleted last expense:\n\nDescription: ${lastExpense.description}\nAmount: $${Number(
+      lastExpense.amount
+    ).toFixed(2)}\nCategory: ${lastExpense.category}`
+  );
+
+  return true;
+}
 Deno.serve(async (req) => {
   try {
     const update = await req.json();
@@ -208,7 +244,11 @@ Deno.serve(async (req) => {
       await sendTelegramMessage(chatId, reply);
       return new Response("OK", { status: 200 });
     }
+const handledDeleteLastCommand = await handleDeleteLastCommand(chatId, text);
 
+if (handledDeleteLastCommand) {
+  return new Response("OK", { status: 200 });
+}
    const { data: existingPendingExpense } = await supabase
   .from("pending_expenses")
   .select("*")
