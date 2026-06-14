@@ -186,6 +186,76 @@ async function handleDeleteLastCommand(chatId: string, text: string): Promise<bo
 
   return true;
 }
+
+function getDateRange(period: "daily" | "weekly" | "monthly") {
+  const now = new Date();
+  let start: Date;
+
+  if (period === "daily") {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else if (period === "weekly") {
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    start = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + diffToMonday
+    );
+  } else {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  return start.toISOString().slice(0, 10);
+}
+
+async function sendSummary(
+  chatId: string,
+  period: "daily" | "weekly" | "monthly"
+) {
+  const startDate = getDateRange(period);
+
+  const { data, error } = await supabase
+    .from("expenses")
+    .select("category, amount")
+    .gte("date", startDate)
+    .eq("telegram_chat_id", chatId);
+
+  if (error || !data) {
+    await sendTelegramMessage(
+      chatId,
+      `Sorry, I could not get your ${period} summary.`
+    );
+    return;
+  }
+
+  const totals: Record<string, number> = {};
+
+  for (const item of data) {
+    totals[item.category] = (totals[item.category] || 0) + Number(item.amount);
+  }
+
+  const totalSpent = Object.values(totals).reduce((a, b) => a + b, 0);
+
+  let title = "";
+
+  if (period === "daily") title = "Daily";
+  if (period === "weekly") title = "Weekly";
+  if (period === "monthly") title = "Monthly";
+
+  let reply = `${title} summary:\n\n`;
+  reply += `Total: $${totalSpent.toFixed(2)}\n\n`;
+
+  if (Object.keys(totals).length === 0) {
+    reply += "No expenses recorded yet.";
+  } else {
+    for (const [category, amount] of Object.entries(totals)) {
+      reply += `${category}: $${amount.toFixed(2)}\n`;
+    }
+  }
+
+  await sendTelegramMessage(chatId, reply);
+}
+
 Deno.serve(async (req) => {
   try {
     const update = await req.json();
@@ -209,41 +279,20 @@ Deno.serve(async (req) => {
       return new Response("OK", { status: 200 });
     }
 
-    if (text === "/summary") {
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-        .toISOString()
-        .slice(0, 10);
+    if (text === "/summary" || text === "/monthly") {
+  await sendSummary(chatId, "monthly");
+  return new Response("OK", { status: 200 });
+}
 
-      const { data, error } = await supabase
-        .from("expenses")
-        .select("category, amount")
-        .gte("date", monthStart)
-        .eq("telegram_chat_id", chatId);
+if (text === "/daily") {
+  await sendSummary(chatId, "daily");
+  return new Response("OK", { status: 200 });
+}
 
-      if (error || !data) {
-        await sendTelegramMessage(chatId, "Sorry, I could not get your summary.");
-        return new Response("OK", { status: 200 });
-      }
-
-      const totals: Record<string, number> = {};
-
-      for (const item of data) {
-        totals[item.category] =
-          (totals[item.category] || 0) + Number(item.amount);
-      }
-
-      const totalSpent = Object.values(totals).reduce((a, b) => a + b, 0);
-
-      let reply = `This month's summary:\n\nTotal: $${totalSpent.toFixed(2)}\n\n`;
-
-      for (const [category, amount] of Object.entries(totals)) {
-        reply += `${category}: $${amount.toFixed(2)}\n`;
-      }
-
-      await sendTelegramMessage(chatId, reply);
-      return new Response("OK", { status: 200 });
-    }
+if (text === "/weekly") {
+  await sendSummary(chatId, "weekly");
+  return new Response("OK", { status: 200 });
+}
 const handledDeleteLastCommand = await handleDeleteLastCommand(chatId, text);
 
 if (handledDeleteLastCommand) {
