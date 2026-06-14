@@ -150,7 +150,7 @@ async function askUserToCategorise(
   );
 }
 async function handleDeleteLastCommand(chatId: string, text: string): Promise<boolean> {
-  if (text !== "/delete_last") {
+  if (text !== "/delete last") {
     return false;
   }
 
@@ -256,6 +256,90 @@ async function sendSummary(
   await sendTelegramMessage(chatId, reply);
 }
 
+async function handleBudgetCommand(chatId: string, text: string): Promise<boolean> {
+  if (text === "/budgets") {
+    const { data, error } = await supabase
+      .from("budgets")
+      .select("category, period, budget_amount")
+      .eq("telegram_chat_id", chatId)
+      .order("category");
+
+    if (error || !data) {
+      await sendTelegramMessage(chatId, "Sorry, I could not get your budgets.");
+      return true;
+    }
+
+    if (data.length === 0) {
+      await sendTelegramMessage(
+        chatId,
+        "No budgets set yet.\n\nExample:\n/budget Dining 300"
+      );
+      return true;
+    }
+
+    let reply = "Your budgets:\n\n";
+
+    for (const item of data) {
+      reply += `${item.category} (${item.period}): $${Number(
+        item.budget_amount
+      ).toFixed(2)}\n`;
+    }
+
+    await sendTelegramMessage(chatId, reply);
+    return true;
+  }
+
+  if (!text.startsWith("/budget ")) {
+    return false;
+  }
+
+  const parts = text.split(" ");
+
+  if (parts.length < 3) {
+    await sendTelegramMessage(
+      chatId,
+      "Please use this format:\n\n/budget Dining 300"
+    );
+    return true;
+  }
+
+  const amount = Number(parts[parts.length - 1]);
+  const categoryText = parts.slice(1, -1).join(" ");
+  const category = normaliseCategory(categoryText);
+
+  if (!category || Number.isNaN(amount)) {
+    await sendTelegramMessage(
+      chatId,
+      `Please use a valid category and amount.\n\nExample:\n/budget Dining 300\n\nCategories:\n${CATEGORIES.join(", ")}`
+    );
+    return true;
+  }
+
+  const { error } = await supabase.from("budgets").upsert(
+    {
+      telegram_chat_id: chatId,
+      category,
+      period: "monthly",
+      budget_amount: amount,
+    },
+    {
+      onConflict: "telegram_chat_id,category,period",
+    }
+  );
+
+  if (error) {
+    await sendTelegramMessage(chatId, "Sorry, I could not save your budget.");
+    return true;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    `Budget saved!\n\n${category} monthly budget: $${amount.toFixed(2)}`
+  );
+
+  return true;
+}
+
 Deno.serve(async (req) => {
   try {
     const update = await req.json();
@@ -273,7 +357,7 @@ Deno.serve(async (req) => {
     if (text === "/start") {
       await sendTelegramMessage(
         chatId,
-        "Hi! Send me expenses like:\n\nlunch 8.50\ngrab 12.40\nshopee 51.70\nzus coffee 5.90\n\nCommands:\n/summary\n/delete_last"
+        "Hi! Send me expenses like:\n\nlunch 8.50\ngrab 12.40\nshopee 51.70\nzus coffee 5.90\n\nCommands:\n/summary\n/delete last"
       );
 
       return new Response("OK", { status: 200 });
@@ -297,6 +381,12 @@ const handledDeleteLastCommand = await handleDeleteLastCommand(chatId, text);
 
 if (handledDeleteLastCommand) {
   return new Response("OK", { status: 200 });
+}
+  const handledBudgetCommand = await handleBudgetCommand(chatId, text);
+
+if (handledBudgetCommand) {
+  return new Response("OK", { status: 200 });
+}
 }
    const { data: existingPendingExpense } = await supabase
   .from("pending_expenses")
