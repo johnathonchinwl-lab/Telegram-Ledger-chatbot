@@ -203,7 +203,7 @@ Deno.serve(async (req) => {
     if (text === "/start") {
       await sendTelegramMessage(
         chatId,
-        "Hi! Send me expenses like:\n\nlunch 8.50\ngrab 12.40\nshopee 51.70\nzus coffee 5.90\n\nUse /summary to see this month's spending."
+        "Hi! Send me expenses like:\n\nlunch 8.50\ngrab 12.40\nshopee 51.70\nzus coffee 5.90\n\nCommands:\n/summary\n/delete_last"
       );
 
       return new Response("OK", { status: 200 });
