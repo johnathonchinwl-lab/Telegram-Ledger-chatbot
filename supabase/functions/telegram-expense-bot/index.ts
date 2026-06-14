@@ -152,6 +152,8 @@ async function askUserToCategorise(
 Deno.serve(async (req) => {
   try {
     const update = await req.json();
+    
+    console.log("Received Telegram update:", JSON.stringify(update));
 
     const message = update.message;
     const text = message?.text;
