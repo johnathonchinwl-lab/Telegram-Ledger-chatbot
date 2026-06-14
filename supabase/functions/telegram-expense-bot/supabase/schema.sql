@@ -14,7 +14,8 @@ create table if not exists expenses (
 create table if not exists category_rules (
   id uuid primary key default gen_random_uuid(),
   keyword text not null,
-  category text not null
+  category text not null,
+  unique (keyword, category)
 );
 
 insert into category_rules (keyword, category) values
@@ -47,7 +48,7 @@ insert into category_rules (keyword, category) values
 ('giant', 'Groceries'),
 ('syfe', 'Investment'),
 ('endowus', 'Investment')
-on conflict do nothing;
+on conflict (keyword, category) do nothing;
 
 create table if not exists pending_expenses (
   id uuid primary key default gen_random_uuid(),
