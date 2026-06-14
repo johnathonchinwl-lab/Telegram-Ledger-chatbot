@@ -6,6 +6,19 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+const CATEGORIES = [
+  "Dining",
+  "Travel",
+  "Phone Bill",
+  "Insurance",
+  "Gym",
+  "Subscription",
+  "Shopping",
+  "Groceries",
+  "Investment",
+  "Misc",
+];
+
 function extractAmount(text: string): number | null {
   const match = text.match(/(\d+(\.\d{1,2})?)/);
   if (!match) return null;
@@ -16,22 +29,39 @@ function extractDescription(text: string): string {
   return text.replace(/(\d+(\.\d{1,2})?)/, "").trim();
 }
 
-async function categoriseExpense(description: string): Promise<string> {
+function normaliseCategory(text: string): string | null {
+  const cleaned = text.trim().toLowerCase();
+
+  for (const category of CATEGORIES) {
+    if (category.toLowerCase() === cleaned) {
+      return category;
+    }
+  }
+
+  return null;
+}
+
+async function categoriseExpense(description: string): Promise<string | null> {
   const { data, error } = await supabase
     .from("category_rules")
     .select("keyword, category");
 
-  if (error || !data) return "Misc";
+  if (error || !data) return null;
 
   const lowerDescription = description.toLowerCase();
+  const matchedCategories = new Set<string>();
 
   for (const rule of data) {
     if (lowerDescription.includes(rule.keyword.toLowerCase())) {
-      return rule.category;
+      matchedCategories.add(rule.category);
     }
   }
 
-  return "Misc";
+  if (matchedCategories.size === 1) {
+    return Array.from(matchedCategories)[0];
+  }
+
+  return null;
 }
 
 async function sendTelegramMessage(chatId: string, text: string) {
@@ -45,6 +75,75 @@ async function sendTelegramMessage(chatId: string, text: string) {
       text,
     }),
   });
+}
+
+async function handlePendingExpenseReply(chatId: string, text: string): Promise<boolean> {
+  const category = normaliseCategory(text);
+
+  if (!category) {
+    return false;
+  }
+
+  const { data: pendingExpense, error: pendingError } = await supabase
+    .from("pending_expenses")
+    .select("*")
+    .eq("telegram_chat_id", chatId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (pendingError || !pendingExpense) {
+    return false;
+  }
+
+  const { error: insertError } = await supabase.from("expenses").insert({
+    description: pendingExpense.description,
+    amount: pendingExpense.amount,
+    category,
+    person: "Default",
+    raw_message: pendingExpense.raw_message,
+    telegram_chat_id: chatId,
+  });
+
+  if (insertError) {
+    await sendTelegramMessage(chatId, "Sorry, I could not save this expense.");
+    return true;
+  }
+
+  await supabase
+    .from("pending_expenses")
+    .delete()
+    .eq("id", pendingExpense.id);
+
+  await sendTelegramMessage(
+    chatId,
+    `Saved!\n\nDescription: ${pendingExpense.description}\nAmount: $${Number(
+      pendingExpense.amount
+    ).toFixed(2)}\nCategory: ${category}`
+  );
+
+  return true;
+}
+
+async function askUserToCategorise(
+  chatId: string,
+  description: string,
+  amount: number,
+  rawMessage: string
+) {
+  await supabase.from("pending_expenses").insert({
+    description,
+    amount,
+    raw_message: rawMessage,
+    telegram_chat_id: chatId,
+  });
+
+  await sendTelegramMessage(
+    chatId,
+    `Please categorise this expense:\n\nDescription: ${description}\nAmount: $${amount.toFixed(
+      2
+    )}\n\nReply with one category:\n${CATEGORIES.join(", ")}`
+  );
 }
 
 Deno.serve(async (req) => {
@@ -62,7 +161,7 @@ Deno.serve(async (req) => {
     if (text === "/start") {
       await sendTelegramMessage(
         chatId,
-        "Hi! Send me expenses like:\n\nlunch 8.50\ngrab 12.40\nshopee 51.70\nzus coffee 5.90"
+        "Hi! Send me expenses like:\n\nlunch 8.50\ngrab 12.40\nshopee 51.70\nzus coffee 5.90\n\nUse /summary to see this month's spending."
       );
 
       return new Response("OK", { status: 200 });
@@ -104,6 +203,12 @@ Deno.serve(async (req) => {
       return new Response("OK", { status: 200 });
     }
 
+    const handledPendingExpense = await handlePendingExpenseReply(chatId, text);
+
+    if (handledPendingExpense) {
+      return new Response("OK", { status: 200 });
+    }
+
     const amount = extractAmount(text);
     const description = extractDescription(text);
 
@@ -117,6 +222,11 @@ Deno.serve(async (req) => {
     }
 
     const category = await categoriseExpense(description);
+
+    if (!category) {
+      await askUserToCategorise(chatId, description, amount, text);
+      return new Response("OK", { status: 200 });
+    }
 
     const { error } = await supabase.from("expenses").insert({
       description,
