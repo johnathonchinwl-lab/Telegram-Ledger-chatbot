@@ -65,22 +65,28 @@ async function categoriseExpense(description: string): Promise<string | null> {
 }
 
 async function sendTelegramMessage(chatId: string, text: string) {
-  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-    }),
-  });
+  const response = await fetch(
+    `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+      }),
+    }
+  );
 
   const result = await response.text();
   console.log("Telegram sendMessage result:", result);
 }
 
-async function handlePendingExpenseReply(chatId: string, text: string): Promise<boolean> {
+async function handlePendingExpenseReply(
+  chatId: string,
+  text: string
+): Promise<boolean> {
   const category = normaliseCategory(text);
 
   if (!category) {
@@ -141,7 +147,6 @@ async function askUserToCategorise(
     telegram_chat_id: chatId,
   });
 
-  
   await sendTelegramMessage(
     chatId,
     `Please categorise this expense:\n\nDescription: ${description}\nAmount: $${amount.toFixed(
@@ -149,8 +154,12 @@ async function askUserToCategorise(
     )}\n\nReply with one category:\n${CATEGORIES.join(", ")}`
   );
 }
-async function handleDeleteLastCommand(chatId: string, text: string): Promise<boolean> {
-  if (text !== "/delete last") {
+
+async function handleDeleteLastCommand(
+  chatId: string,
+  text: string
+): Promise<boolean> {
+  if (text !== "/delete_last") {
     return false;
   }
 
@@ -173,7 +182,10 @@ async function handleDeleteLastCommand(chatId: string, text: string): Promise<bo
     .eq("id", lastExpense.id);
 
   if (deleteError) {
-    await sendTelegramMessage(chatId, "Sorry, I could not delete the last expense.");
+    await sendTelegramMessage(
+      chatId,
+      "Sorry, I could not delete the last expense."
+    );
     return true;
   }
 
@@ -196,6 +208,7 @@ function getDateRange(period: "daily" | "weekly" | "monthly") {
   } else if (period === "weekly") {
     const day = now.getDay();
     const diffToMonday = day === 0 ? -6 : 1 - day;
+
     start = new Date(
       now.getFullYear(),
       now.getMonth(),
@@ -256,7 +269,10 @@ async function sendSummary(
   await sendTelegramMessage(chatId, reply);
 }
 
-async function handleBudgetCommand(chatId: string, text: string): Promise<boolean> {
+async function handleBudgetCommand(
+  chatId: string,
+  text: string
+): Promise<boolean> {
   if (text === "/budgets") {
     const { data, error } = await supabase
       .from("budgets")
@@ -310,7 +326,9 @@ async function handleBudgetCommand(chatId: string, text: string): Promise<boolea
   if (!category || Number.isNaN(amount)) {
     await sendTelegramMessage(
       chatId,
-      `Please use a valid category and amount.\n\nExample:\n/budget Dining 300\n\nCategories:\n${CATEGORIES.join(", ")}`
+      `Please use a valid category and amount.\n\nExample:\n/budget Dining 300\n\nCategories:\n${CATEGORIES.join(
+        ", "
+      )}`
     );
     return true;
   }
@@ -343,7 +361,7 @@ async function handleBudgetCommand(chatId: string, text: string): Promise<boolea
 Deno.serve(async (req) => {
   try {
     const update = await req.json();
-    
+
     console.log("Received Telegram update:", JSON.stringify(update));
 
     const message = update.message;
@@ -364,52 +382,57 @@ Deno.serve(async (req) => {
     }
 
     if (text === "/summary" || text === "/monthly") {
-  await sendSummary(chatId, "monthly");
-  return new Response("OK", { status: 200 });
-}
+      await sendSummary(chatId, "monthly");
+      return new Response("OK", { status: 200 });
+    }
 
-if (text === "/daily") {
-  await sendSummary(chatId, "daily");
-  return new Response("OK", { status: 200 });
-}
+    if (text === "/daily") {
+      await sendSummary(chatId, "daily");
+      return new Response("OK", { status: 200 });
+    }
 
-if (text === "/weekly") {
-  await sendSummary(chatId, "weekly");
-  return new Response("OK", { status: 200 });
-}
-const handledDeleteLastCommand = await handleDeleteLastCommand(chatId, text);
+    if (text === "/weekly") {
+      await sendSummary(chatId, "weekly");
+      return new Response("OK", { status: 200 });
+    }
 
-if (handledDeleteLastCommand) {
-  return new Response("OK", { status: 200 });
-}
-  const handledBudgetCommand = await handleBudgetCommand(chatId, text);
+    const handledDeleteLastCommand = await handleDeleteLastCommand(chatId, text);
 
-if (handledBudgetCommand) {
-  return new Response("OK", { status: 200 });
-}
-}
-   const { data: existingPendingExpense } = await supabase
-  .from("pending_expenses")
-  .select("*")
-  .eq("telegram_chat_id", chatId)
-  .order("created_at", { ascending: false })
-  .limit(1)
-  .maybeSingle();
+    if (handledDeleteLastCommand) {
+      return new Response("OK", { status: 200 });
+    }
 
-if (existingPendingExpense) {
-  const handledPendingExpense = await handlePendingExpenseReply(chatId, text);
+    const handledBudgetCommand = await handleBudgetCommand(chatId, text);
 
-  if (handledPendingExpense) {
-    return new Response("OK", { status: 200 });
-  }
+    if (handledBudgetCommand) {
+      return new Response("OK", { status: 200 });
+    }
 
-  await sendTelegramMessage(
-    chatId,
-    `Please reply with one of these categories:\n\n${CATEGORIES.join(", ")}`
-  );
+    const { data: existingPendingExpense } = await supabase
+      .from("pending_expenses")
+      .select("*")
+      .eq("telegram_chat_id", chatId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  return new Response("OK", { status: 200 });
-}
+    if (existingPendingExpense) {
+      const handledPendingExpense = await handlePendingExpenseReply(
+        chatId,
+        text
+      );
+
+      if (handledPendingExpense) {
+        return new Response("OK", { status: 200 });
+      }
+
+      await sendTelegramMessage(
+        chatId,
+        `Please reply with one of these categories:\n\n${CATEGORIES.join(", ")}`
+      );
+
+      return new Response("OK", { status: 200 });
+    }
 
     const amount = extractAmount(text);
     const description = extractDescription(text);
@@ -452,8 +475,8 @@ if (existingPendingExpense) {
     );
 
     return new Response("OK", { status: 200 });
-} catch (error) {
-  console.error("Function error:", error);
-  return new Response("Error", { status: 200 });
-}
+  } catch (error) {
+    console.error("Function error:", error);
+    return new Response("Error", { status: 200 });
+  }
 });
