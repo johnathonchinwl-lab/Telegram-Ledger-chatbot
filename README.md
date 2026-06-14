@@ -18,6 +18,16 @@ zus coffee 5.90
 /summary
 ```
 
+## Unsure Category Flow
+
+If the bot cannot categorise an expense confidently, it will ask the user to choose a category.
+
+Example:
+
+```text
+ants spray 0.95
+```
+
 ## Tech Stack
 
 - Telegram Bot
