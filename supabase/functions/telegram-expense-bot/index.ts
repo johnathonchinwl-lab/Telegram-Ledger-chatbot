@@ -65,7 +65,7 @@ async function categoriseExpense(description: string): Promise<string | null> {
 }
 
 async function sendTelegramMessage(chatId: string, text: string) {
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -75,6 +75,9 @@ async function sendTelegramMessage(chatId: string, text: string) {
       text,
     }),
   });
+
+  const result = await response.text();
+  console.log("Telegram sendMessage result:", result);
 }
 
 async function handlePendingExpenseReply(chatId: string, text: string): Promise<boolean> {
@@ -267,7 +270,8 @@ if (existingPendingExpense) {
     );
 
     return new Response("OK", { status: 200 });
-  } catch (_error) {
-    return new Response("Error", { status: 200 });
-  }
+} catch (error) {
+  console.error("Function error:", error);
+  return new Response("Error", { status: 200 });
+}
 });
